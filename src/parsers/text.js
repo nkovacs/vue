@@ -2,7 +2,7 @@ var Cache = require('../cache')
 var config = require('../config')
 var dirParser = require('./directive')
 var regexEscapeRE = /[-.*+?^${}()|[\]\/\\]/g
-var cache, tagRE, htmlRE, firstChar, lastChar
+var cache, tagRE, htmlRE, commentStartRE, commentEnd, commentEndHtml, firstChar, lastChar
 
 /**
  * Escape a string so it can be used in a RegExp
@@ -42,6 +42,13 @@ function compileRegex () {
     '.*' +
     closeRE + lastCharRE + '$'
   )
+  commentStartRE = new RegExp(
+    firstCharRE + '?' + openRE +
+    '(.+)',
+    'g'
+  )
+  commentEnd = close
+  commentEndHtml = close + lastChar
   // reset cache
   cache = new Cache(1000)
 }
@@ -94,6 +101,60 @@ exports.parse = function (text) {
       html: htmlRE.test(match[0]),
       oneTime: oneTime,
       twoWay: twoWay
+    })
+    lastIndex = index + match[0].length
+  }
+  if (lastIndex < text.length) {
+    tokens.push({
+      value: text.slice(lastIndex)
+    })
+  }
+  cache.put(text, tokens)
+  return tokens
+}
+
+exports.parseComment = function(text) {
+  if (config._delimitersChanged) {
+    compileRegex()
+  }
+  var hit = cache.get(text)
+  if (hit) {
+    return hit
+  }
+
+  var tokens = []
+  var trimmed = text.trim()
+  if (trimmed === commentEnd || trimmed === commentEndHtml) {
+    tokens.push({
+      closingComment: true
+    })
+    cache.put(text, tokens)
+    return tokens
+  }
+
+  if (!commentStartRE.test(text)) {
+    return null
+  }
+  var lastIndex = commentStartRE.lastIndex = 0
+  var match, index, value, first, oneTime
+  /* jshint boss:true */
+  while (match = commentStartRE.exec(text)) {
+    if (index > lastIndex) {
+      tokens.push({
+        value: text.slice(lastIndex, index)
+      })
+    }
+    // tag token
+    first = match[1].charCodeAt(0)
+    oneTime = first === 0x2A // *
+    value = oneTime
+      ? match[1].slice(1)
+      : match[1]
+    tokens.push({
+      tag: true,
+      value: value.trim(),
+      html: htmlRE.test(match[0]),
+      oneTime: oneTime
     })
     lastIndex = index + match[0].length
   }

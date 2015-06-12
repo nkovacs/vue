@@ -216,12 +216,14 @@ exports.compileAndLinkProps = function (vm, el, props) {
  * @return {Function|null}
  */
 
-function compileNode (node, options) {
+function compileNode (node, options, list) {
   var type = node.nodeType
   if (type === 1 && node.tagName !== 'SCRIPT') {
     return compileElement(node, options)
   } else if (type === 3 && config.interpolate && node.data.trim()) {
     return compileTextNode(node, options)
+  } else if (type === 8 && list) {
+    return compileCommentNode(node, options)
   } else {
     return null
   }
@@ -287,6 +289,51 @@ function compileTextNode (node, options) {
     frag.appendChild(el)
   }
   return makeTextNodeLinkFn(tokens, frag, options)
+}
+
+/**
+ * Compile a comment node and return a nodeLinkFn.
+ *
+ * @param {CommentNode} node
+ * @param {Object} options
+ * @return {Function|null} commentNodeLinkFn
+ */
+
+function compileCommentNode (node, options) {
+
+  var tokens = textParser.parseComment(node.data)
+  if (!tokens) {
+    return null
+  }
+
+  if (tokens.length !== 1) {
+    return null
+  }
+
+  if (tokens[0].closingComment) {
+    return true
+  }
+
+  if (!tokens[0].tag) {
+    return null
+  }
+
+  var frag = document.createDocumentFragment()
+  var el = processTextToken(tokens[0], options)
+  frag.appendChild(el)
+
+  return makeTextNodeLinkFn(tokens, frag, options)
+
+  /*var frag = document.createDocumentFragment()
+  var el, token
+  for (var i = 0, l = tokens.length; i < l; i++) {
+    token = tokens[i]
+    el = token.tag
+      ? processTextToken(token, options)
+      : document.createTextNode(token.value)
+    frag.appendChild(el)
+  }
+  return makeTextNodeLinkFn(tokens, frag, options)*/
 }
 
 /**
@@ -365,10 +412,30 @@ function makeTextNodeLinkFn (tokens, frag) {
 
 function compileNodeList (nodeList, options) {
   var linkFns = []
-  var nodeLinkFn, childLinkFn, node
+  var nodeLinkFn, childLinkFn, node, commentNodeLinkFn
+  var remover = function(vm, el) {
+    _.remove(el)
+  }
   for (var i = 0, l = nodeList.length; i < l; i++) {
     node = nodeList[i]
-    nodeLinkFn = compileNode(node, options)
+    nodeLinkFn = compileNode(node, options, true)
+    if (nodeLinkFn === true) {
+      if (commentNodeLinkFn) {
+        linkFns.push(commentNodeLinkFn, null)
+        commentNodeLinkFn = null
+      }
+      continue
+    }
+    // delete node if we're inside comment binding
+    if (commentNodeLinkFn) {
+      linkFns.push(remover, null)
+      continue
+    }
+    if (node.nodeType === 8 && nodeLinkFn) {
+      commentNodeLinkFn = nodeLinkFn
+      linkFns.push(remover, null)
+      continue
+    }
     childLinkFn =
       !(nodeLinkFn && nodeLinkFn.terminal) &&
       node.tagName !== 'SCRIPT' &&
