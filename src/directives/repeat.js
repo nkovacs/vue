@@ -347,8 +347,23 @@ module.exports = {
     // resolve constructor
     var Ctor = this.Ctor || this.resolveDynamicComponent(data, meta)
     var parent = this._host || this.vm
+    var element
+    // really shouldn't be using this
+    if (this._descriptor.prerenderedElements) {
+      for (var i = 0, l = this._descriptor.prerenderedElements.length; i < l; i++) {
+        var e = this._descriptor.prerenderedElements[i]
+        if (e.idx == index) {
+          element = e.el
+          break
+        }
+      }
+    }
+
+    if (!element) {
+      element = templateParser.clone(this.template)
+    }
     var vm = parent.$addChild({
-      el: templateParser.clone(this.template),
+      el: element,
       data: data,
       inherit: this.inherit,
       template: this.inlineTemplate,

@@ -16,6 +16,12 @@ var terminalDirectives = [
   'if'
 ]
 
+var idxDirective = 'repeat-idx'
+
+var remover = function(vm, el) {
+  _.remove(el)
+}
+
 /**
  * Compile a template and return a reusable composite link
  * function, which recursively contains more link functions
@@ -216,10 +222,10 @@ exports.compileAndLinkProps = function (vm, el, props) {
  * @return {Function|null}
  */
 
-function compileNode (node, options, list) {
+function compileNode (node, options, list, repeatServerElements) {
   var type = node.nodeType
   if (type === 1 && node.tagName !== 'SCRIPT') {
-    return compileElement(node, options)
+    return compileElement(node, options, repeatServerElements)
   } else if (type === 3 && config.interpolate && node.data.trim()) {
     return compileTextNode(node, options)
   } else if (type === 8 && list) {
@@ -237,13 +243,21 @@ function compileNode (node, options, list) {
  * @return {Function|null}
  */
 
-function compileElement (el, options) {
+function compileElement (el, options, repeatServerElements) {
   var hasAttrs = el.hasAttributes()
   // check element directives
   var linkFn = checkElementDirectives(el, options)
   // check terminal directives (repeat & if)
   if (!linkFn && hasAttrs) {
-    linkFn = checkTerminalDirectives(el, options)
+    linkFn = checkTerminalDirectives(el, options, repeatServerElements)
+  }
+  // check v-repeat-idx
+  if ((value = _.attr(el, idxDirective)) !== null) {
+    repeatServerElements.push({
+      el: el,
+      idx: value
+    })
+    linkFn = remover
   }
   // check component
   if (!linkFn) {
@@ -413,12 +427,10 @@ function makeTextNodeLinkFn (tokens, frag) {
 function compileNodeList (nodeList, options) {
   var linkFns = []
   var nodeLinkFn, childLinkFn, node, commentNodeLinkFn
-  var remover = function(vm, el) {
-    _.remove(el)
-  }
+  var repeatServerElements = []
   for (var i = 0, l = nodeList.length; i < l; i++) {
     node = nodeList[i]
-    nodeLinkFn = compileNode(node, options, true)
+    nodeLinkFn = compileNode(node, options, true, repeatServerElements)
     if (nodeLinkFn === true) {
       if (commentNodeLinkFn) {
         linkFns.push(commentNodeLinkFn, null)
@@ -667,7 +679,7 @@ function checkComponent (el, options, hasAttrs) {
  * @return {Function} terminalLinkFn
  */
 
-function checkTerminalDirectives (el, options) {
+function checkTerminalDirectives (el, options, repeatServerElements) {
   if (_.attr(el, 'pre') !== null) {
     return skip
   }
@@ -676,7 +688,7 @@ function checkTerminalDirectives (el, options) {
   for (var i = 0, l = terminalDirectives.length; i < l; i++) {
     dirName = terminalDirectives[i]
     if ((value = _.attr(el, dirName)) !== null) {
-      return makeTerminalNodeLinkFn(el, dirName, value, options)
+      return makeTerminalNodeLinkFn(el, dirName, value, options, null, repeatServerElements)
     }
   }
 }
@@ -698,8 +710,11 @@ skip.terminal = true
  * @return {Function} terminalLinkFn
  */
 
-function makeTerminalNodeLinkFn (el, dirName, value, options, def) {
+function makeTerminalNodeLinkFn (el, dirName, value, options, def, repeatServerElements) {
   var descriptor = dirParser.parse(value)[0]
+  if (dirName === 'repeat') {
+    descriptor.prerenderedElements = repeatServerElements
+  }
   // no need to call resolveAsset since terminal directives
   // are always internal
   def = def || options.directives[dirName]
