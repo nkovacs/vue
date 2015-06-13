@@ -515,7 +515,7 @@ return /******/ (function(modules) { // webpackBootstrap
 
 	var _ = __webpack_require__(12)
 	var compiler = __webpack_require__(31)
-	var Observer = __webpack_require__(49)
+	var Observer = __webpack_require__(50)
 	var Dep = __webpack_require__(22)
 
 	/**
@@ -1951,7 +1951,7 @@ return /******/ (function(modules) { // webpackBootstrap
 	 * Install special array filters
 	 */
 
-	_.extend(exports, __webpack_require__(50))
+	_.extend(exports, __webpack_require__(49))
 
 
 /***/ },
@@ -3666,7 +3666,7 @@ return /******/ (function(modules) { // webpackBootstrap
 
 	var _ = __webpack_require__(12)
 	var config = __webpack_require__(16)
-	var Observer = __webpack_require__(49)
+	var Observer = __webpack_require__(50)
 	var expParser = __webpack_require__(21)
 	var batcher = __webpack_require__(54)
 	var uid = 0
@@ -5522,8 +5522,17 @@ return /******/ (function(modules) { // webpackBootstrap
 	    // setup anchor nodes
 	    this.start = _.createAnchor('v-repeat-start')
 	    this.end = _.createAnchor('v-repeat-end')
-	    _.replace(this.el, this.end)
-	    _.before(this.start, this.end)
+	    if (this._descriptor.keepElement) {
+	      _.after(this.end, this.el)
+	      this.el = this.el.cloneNode(true)
+	    } else {
+	      _.replace(this.el, this.end)
+	    }
+	    if (this._descriptor.prerenderedElements && this._descriptor.prerenderedElements.length) {
+	      _.before(this.start, this._descriptor.prerenderedElements[0].el)
+	    } else {
+	      _.before(this.start, this.end)
+	    }
 	    // check if this is a block repeat
 	    this.template = _.isTemplate(this.el)
 	      ? templateParser.parse(this.el, true)
@@ -5766,10 +5775,15 @@ return /******/ (function(modules) { // webpackBootstrap
 	      }
 	      vms[i] = vm
 	      // insert if this is first run
-	      if (init) {
+	      if (init && !vm.$options._prerendered) {
 	        vm.$before(end)
 	      }
+	      vm.$options._prerendered = false
 	    }
+	    this._descriptor.prerenderedElements = false
+	    // TODO: remove prerenderedElements that were not used,
+	    // in case server data does not match client data
+
 	    // if this is the first run, we're done.
 	    if (init) {
 	      return vms
@@ -5845,12 +5859,16 @@ return /******/ (function(modules) { // webpackBootstrap
 	    var Ctor = this.Ctor || this.resolveDynamicComponent(data, meta)
 	    var parent = this._host || this.vm
 	    var element
+	    var linkFn
+	    var prerendered = false
 	    // really shouldn't be using this
 	    if (this._descriptor.prerenderedElements) {
 	      for (var i = 0, l = this._descriptor.prerenderedElements.length; i < l; i++) {
 	        var e = this._descriptor.prerenderedElements[i]
-	        if (e.idx == index) {
+	        if (e.idx === index) {
 	          element = e.el
+	          linkFn = compiler.compile(element, _.extend({}, this.vm.$options))
+	          prerendered = true
 	          break
 	        }
 	      }
@@ -5858,6 +5876,7 @@ return /******/ (function(modules) { // webpackBootstrap
 
 	    if (!element) {
 	      element = templateParser.clone(this.template)
+	      linkFn = this._linkFn
 	    }
 	    var vm = parent.$addChild({
 	      el: element,
@@ -5873,11 +5892,13 @@ return /******/ (function(modules) { // webpackBootstrap
 	      // linker cachable if no inline-template
 	      _linkerCachable: !this.inlineTemplate && Ctor !== _.Vue,
 	      // pre-compiled linker for simple repeats
-	      _linkFn: this._linkFn,
+	      _linkFn: linkFn,
 	      // identifier, shows that this vm belongs to this collection
 	      _repeatId: this.id,
 	      // transclusion content owner
-	      _context: this.vm
+	      _context: this.vm,
+	      // was this element already rendered by the server?
+	      _prerendered: prerendered
 	    }, Ctor)
 	    // cache instance
 	    if (needCache) {
@@ -6954,6 +6975,98 @@ return /******/ (function(modules) { // webpackBootstrap
 /***/ function(module, exports, __webpack_require__) {
 
 	var _ = __webpack_require__(12)
+	var Path = __webpack_require__(17)
+
+	/**
+	 * Filter filter for v-repeat
+	 *
+	 * @param {String} searchKey
+	 * @param {String} [delimiter]
+	 * @param {String} dataKey
+	 */
+
+	exports.filterBy = function (arr, search, delimiter, dataKey) {
+	  // allow optional `in` delimiter
+	  // because why not
+	  if (delimiter && delimiter !== 'in') {
+	    dataKey = delimiter
+	  }
+	  /* jshint eqeqeq: false */
+	  if (search == null) {
+	    return arr
+	  }
+	  // cast to lowercase string
+	  search = ('' + search).toLowerCase()
+	  return arr.filter(function (item) {
+	    return dataKey
+	      ? contains(Path.get(item, dataKey), search)
+	      : contains(item, search)
+	  })
+	}
+
+	/**
+	 * Filter filter for v-repeat
+	 *
+	 * @param {String} sortKey
+	 * @param {String} reverse
+	 */
+
+	exports.orderBy = function (arr, sortKey, reverse) {
+	  if (!sortKey) {
+	    return arr
+	  }
+	  var order = 1
+	  if (arguments.length > 2) {
+	    if (reverse === '-1') {
+	      order = -1
+	    } else {
+	      order = reverse ? -1 : 1
+	    }
+	  }
+	  // sort on a copy to avoid mutating original array
+	  return arr.slice().sort(function (a, b) {
+	    if (sortKey !== '$key' && sortKey !== '$value') {
+	      if (a && '$value' in a) a = a.$value
+	      if (b && '$value' in b) b = b.$value
+	    }
+	    a = _.isObject(a) ? Path.get(a, sortKey) : a
+	    b = _.isObject(b) ? Path.get(b, sortKey) : b
+	    return a === b ? 0 : a > b ? order : -order
+	  })
+	}
+
+	/**
+	 * String contain helper
+	 *
+	 * @param {*} val
+	 * @param {String} search
+	 */
+
+	function contains (val, search) {
+	  if (_.isPlainObject(val)) {
+	    for (var key in val) {
+	      if (contains(val[key], search)) {
+	        return true
+	      }
+	    }
+	  } else if (_.isArray(val)) {
+	    var i = val.length
+	    while (i--) {
+	      if (contains(val[i], search)) {
+	        return true
+	      }
+	    }
+	  } else if (val != null) {
+	    return val.toString().toLowerCase().indexOf(search) > -1
+	  }
+	}
+
+
+/***/ },
+/* 50 */
+/***/ function(module, exports, __webpack_require__) {
+
+	var _ = __webpack_require__(12)
 	var config = __webpack_require__(16)
 	var Dep = __webpack_require__(22)
 	var arrayMethods = __webpack_require__(58)
@@ -7199,98 +7312,6 @@ return /******/ (function(modules) { // webpackBootstrap
 	}
 
 	module.exports = Observer
-
-
-/***/ },
-/* 50 */
-/***/ function(module, exports, __webpack_require__) {
-
-	var _ = __webpack_require__(12)
-	var Path = __webpack_require__(17)
-
-	/**
-	 * Filter filter for v-repeat
-	 *
-	 * @param {String} searchKey
-	 * @param {String} [delimiter]
-	 * @param {String} dataKey
-	 */
-
-	exports.filterBy = function (arr, search, delimiter, dataKey) {
-	  // allow optional `in` delimiter
-	  // because why not
-	  if (delimiter && delimiter !== 'in') {
-	    dataKey = delimiter
-	  }
-	  /* jshint eqeqeq: false */
-	  if (search == null) {
-	    return arr
-	  }
-	  // cast to lowercase string
-	  search = ('' + search).toLowerCase()
-	  return arr.filter(function (item) {
-	    return dataKey
-	      ? contains(Path.get(item, dataKey), search)
-	      : contains(item, search)
-	  })
-	}
-
-	/**
-	 * Filter filter for v-repeat
-	 *
-	 * @param {String} sortKey
-	 * @param {String} reverse
-	 */
-
-	exports.orderBy = function (arr, sortKey, reverse) {
-	  if (!sortKey) {
-	    return arr
-	  }
-	  var order = 1
-	  if (arguments.length > 2) {
-	    if (reverse === '-1') {
-	      order = -1
-	    } else {
-	      order = reverse ? -1 : 1
-	    }
-	  }
-	  // sort on a copy to avoid mutating original array
-	  return arr.slice().sort(function (a, b) {
-	    if (sortKey !== '$key' && sortKey !== '$value') {
-	      if (a && '$value' in a) a = a.$value
-	      if (b && '$value' in b) b = b.$value
-	    }
-	    a = _.isObject(a) ? Path.get(a, sortKey) : a
-	    b = _.isObject(b) ? Path.get(b, sortKey) : b
-	    return a === b ? 0 : a > b ? order : -order
-	  })
-	}
-
-	/**
-	 * String contain helper
-	 *
-	 * @param {*} val
-	 * @param {String} search
-	 */
-
-	function contains (val, search) {
-	  if (_.isPlainObject(val)) {
-	    for (var key in val) {
-	      if (contains(val[key], search)) {
-	        return true
-	      }
-	    }
-	  } else if (_.isArray(val)) {
-	    var i = val.length
-	    while (i--) {
-	      if (contains(val[i], search)) {
-	        return true
-	      }
-	    }
-	  } else if (val != null) {
-	    return val.toString().toLowerCase().indexOf(search) > -1
-	  }
-	}
 
 
 /***/ },
@@ -7747,6 +7768,7 @@ return /******/ (function(modules) { // webpackBootstrap
 	]
 
 	var idxDirective = 'repeat-idx'
+	var repeatDirective = 'repeat'
 
 	var remover = function(vm, el) {
 	  _.remove(el)
@@ -7977,17 +7999,24 @@ return /******/ (function(modules) { // webpackBootstrap
 	  var hasAttrs = el.hasAttributes()
 	  // check element directives
 	  var linkFn = checkElementDirectives(el, options)
+	  var repeatIdx = _.attr(el, idxDirective)
 	  // check terminal directives (repeat & if)
 	  if (!linkFn && hasAttrs) {
-	    linkFn = checkTerminalDirectives(el, options, repeatServerElements)
+	    linkFn = checkTerminalDirectives(el, options, repeatServerElements, repeatIdx)
 	  }
 	  // check v-repeat-idx
-	  if ((value = _.attr(el, idxDirective)) !== null) {
+	  if (repeatIdx !== null) {
 	    repeatServerElements.push({
 	      el: el,
-	      idx: value
+	      idx: +repeatIdx
 	    })
-	    linkFn = remover
+	    // TODO handle if
+	    if (!linkFn) {
+	      // don't compile the element yet, it's not attached to the correct repeat vm
+	      linkFn = function() {
+	      }
+	      linkFn.terminal = true
+	    }
 	  }
 	  // check component
 	  if (!linkFn) {
@@ -8409,7 +8438,7 @@ return /******/ (function(modules) { // webpackBootstrap
 	 * @return {Function} terminalLinkFn
 	 */
 
-	function checkTerminalDirectives (el, options, repeatServerElements) {
+	function checkTerminalDirectives (el, options, repeatServerElements, repeatIdx) {
 	  if (_.attr(el, 'pre') !== null) {
 	    return skip
 	  }
@@ -8418,7 +8447,12 @@ return /******/ (function(modules) { // webpackBootstrap
 	  for (var i = 0, l = terminalDirectives.length; i < l; i++) {
 	    dirName = terminalDirectives[i]
 	    if ((value = _.attr(el, dirName)) !== null) {
-	      return makeTerminalNodeLinkFn(el, dirName, value, options, null, repeatServerElements)
+	      var keepElement = false
+	      if (dirName === repeatDirective && repeatIdx !== null) {
+	        // do not remove template element, as it is also an item element
+	        keepElement = true
+	      }
+	      return makeTerminalNodeLinkFn(el, dirName, value, options, null, repeatServerElements, keepElement)
 	    }
 	  }
 	}
@@ -8440,11 +8474,12 @@ return /******/ (function(modules) { // webpackBootstrap
 	 * @return {Function} terminalLinkFn
 	 */
 
-	function makeTerminalNodeLinkFn (el, dirName, value, options, def, repeatServerElements) {
+	function makeTerminalNodeLinkFn (el, dirName, value, options, def, repeatServerElements, keepElement) {
 	  var descriptor = dirParser.parse(value)[0]
-	  if (dirName === 'repeat') {
+	  if (dirName === repeatDirective) {
 	    descriptor.prerenderedElements = repeatServerElements
 	  }
+	  descriptor.keepElement = keepElement
 	  // no need to call resolveAsset since terminal directives
 	  // are always internal
 	  def = def || options.directives[dirName]

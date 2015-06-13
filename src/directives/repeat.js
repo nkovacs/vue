@@ -25,8 +25,17 @@ module.exports = {
     // setup anchor nodes
     this.start = _.createAnchor('v-repeat-start')
     this.end = _.createAnchor('v-repeat-end')
-    _.replace(this.el, this.end)
-    _.before(this.start, this.end)
+    if (this._descriptor.keepElement) {
+      _.after(this.end, this.el)
+      this.el = this.el.cloneNode(true)
+    } else {
+      _.replace(this.el, this.end)
+    }
+    if (this._descriptor.prerenderedElements && this._descriptor.prerenderedElements.length) {
+      _.before(this.start, this._descriptor.prerenderedElements[0].el)
+    } else {
+      _.before(this.start, this.end)
+    }
     // check if this is a block repeat
     this.template = _.isTemplate(this.el)
       ? templateParser.parse(this.el, true)
@@ -269,10 +278,15 @@ module.exports = {
       }
       vms[i] = vm
       // insert if this is first run
-      if (init) {
+      if (init && !vm.$options._prerendered) {
         vm.$before(end)
       }
+      vm.$options._prerendered = false
     }
+    this._descriptor.prerenderedElements = false
+    // TODO: remove prerenderedElements that were not used,
+    // in case server data does not match client data
+
     // if this is the first run, we're done.
     if (init) {
       return vms
@@ -348,12 +362,16 @@ module.exports = {
     var Ctor = this.Ctor || this.resolveDynamicComponent(data, meta)
     var parent = this._host || this.vm
     var element
+    var linkFn
+    var prerendered = false
     // really shouldn't be using this
     if (this._descriptor.prerenderedElements) {
       for (var i = 0, l = this._descriptor.prerenderedElements.length; i < l; i++) {
         var e = this._descriptor.prerenderedElements[i]
-        if (e.idx == index) {
+        if (e.idx === index) {
           element = e.el
+          linkFn = compiler.compile(element, _.extend({}, this.vm.$options))
+          prerendered = true
           break
         }
       }
@@ -361,6 +379,7 @@ module.exports = {
 
     if (!element) {
       element = templateParser.clone(this.template)
+      linkFn = this._linkFn
     }
     var vm = parent.$addChild({
       el: element,
@@ -376,11 +395,13 @@ module.exports = {
       // linker cachable if no inline-template
       _linkerCachable: !this.inlineTemplate && Ctor !== _.Vue,
       // pre-compiled linker for simple repeats
-      _linkFn: this._linkFn,
+      _linkFn: linkFn,
       // identifier, shows that this vm belongs to this collection
       _repeatId: this.id,
       // transclusion content owner
-      _context: this.vm
+      _context: this.vm,
+      // was this element already rendered by the server?
+      _prerendered: prerendered
     }, Ctor)
     // cache instance
     if (needCache) {

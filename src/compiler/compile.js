@@ -17,6 +17,7 @@ var terminalDirectives = [
 ]
 
 var idxDirective = 'repeat-idx'
+var repeatDirective = 'repeat'
 
 var remover = function(vm, el) {
   _.remove(el)
@@ -247,17 +248,24 @@ function compileElement (el, options, repeatServerElements) {
   var hasAttrs = el.hasAttributes()
   // check element directives
   var linkFn = checkElementDirectives(el, options)
+  var repeatIdx = _.attr(el, idxDirective)
   // check terminal directives (repeat & if)
   if (!linkFn && hasAttrs) {
-    linkFn = checkTerminalDirectives(el, options, repeatServerElements)
+    linkFn = checkTerminalDirectives(el, options, repeatServerElements, repeatIdx)
   }
   // check v-repeat-idx
-  if ((value = _.attr(el, idxDirective)) !== null) {
+  if (repeatIdx !== null) {
     repeatServerElements.push({
       el: el,
-      idx: value
+      idx: +repeatIdx
     })
-    linkFn = remover
+    // TODO handle if
+    if (!linkFn) {
+      // don't compile the element yet, it's not attached to the correct repeat vm
+      linkFn = function() {
+      }
+      linkFn.terminal = true
+    }
   }
   // check component
   if (!linkFn) {
@@ -679,7 +687,7 @@ function checkComponent (el, options, hasAttrs) {
  * @return {Function} terminalLinkFn
  */
 
-function checkTerminalDirectives (el, options, repeatServerElements) {
+function checkTerminalDirectives (el, options, repeatServerElements, repeatIdx) {
   if (_.attr(el, 'pre') !== null) {
     return skip
   }
@@ -688,7 +696,12 @@ function checkTerminalDirectives (el, options, repeatServerElements) {
   for (var i = 0, l = terminalDirectives.length; i < l; i++) {
     dirName = terminalDirectives[i]
     if ((value = _.attr(el, dirName)) !== null) {
-      return makeTerminalNodeLinkFn(el, dirName, value, options, null, repeatServerElements)
+      var keepElement = false
+      if (dirName === repeatDirective && repeatIdx !== null) {
+        // do not remove template element, as it is also an item element
+        keepElement = true
+      }
+      return makeTerminalNodeLinkFn(el, dirName, value, options, null, repeatServerElements, keepElement)
     }
   }
 }
@@ -710,11 +723,12 @@ skip.terminal = true
  * @return {Function} terminalLinkFn
  */
 
-function makeTerminalNodeLinkFn (el, dirName, value, options, def, repeatServerElements) {
+function makeTerminalNodeLinkFn (el, dirName, value, options, def, repeatServerElements, keepElement) {
   var descriptor = dirParser.parse(value)[0]
-  if (dirName === 'repeat') {
+  if (dirName === repeatDirective) {
     descriptor.prerenderedElements = repeatServerElements
   }
+  descriptor.keepElement = keepElement
   // no need to call resolveAsset since terminal directives
   // are always internal
   def = def || options.directives[dirName]
