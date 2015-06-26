@@ -230,6 +230,8 @@ function compileNode (node, options, list, repeatServerElements) {
   } else if (type === 3 && config.interpolate && node.data.trim()) {
     return compileTextNode(node, options)
   } else if (type === 8 && list) {
+    // comment nodes can only be compiled if they're in a node list
+    // because we need at least the opening comment, the content and the closing comment
     return compileCommentNode(node, options)
   } else {
     return null
@@ -345,17 +347,6 @@ function compileCommentNode (node, options) {
   frag.appendChild(el)
 
   return makeTextNodeLinkFn(tokens, frag, options)
-
-  /*var frag = document.createDocumentFragment()
-  var el, token
-  for (var i = 0, l = tokens.length; i < l; i++) {
-    token = tokens[i]
-    el = token.tag
-      ? processTextToken(token, options)
-      : document.createTextNode(token.value)
-    frag.appendChild(el)
-  }
-  return makeTextNodeLinkFn(tokens, frag, options)*/
 }
 
 /**

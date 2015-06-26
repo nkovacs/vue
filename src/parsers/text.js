@@ -2,7 +2,7 @@ var Cache = require('../cache')
 var config = require('../config')
 var dirParser = require('./directive')
 var regexEscapeRE = /[-.*+?^${}()|[\]\/\\]/g
-var cache, tagRE, htmlRE, commentStartRE, commentEnd, commentEndHtml, firstChar, lastChar
+var cache, tagRE, htmlRE, commentStartRE, commentStartHtmlRE, commentEnd, commentEndHtml, firstChar, lastChar
 
 /**
  * Escape a string so it can be used in a RegExp
@@ -46,6 +46,10 @@ function compileRegex () {
     firstCharRE + '?' + openRE +
     '(.+)',
     'g'
+  )
+  commentStartHtmlRE = new RegExp(
+    '^' + firstCharRE + openRE +
+    '.*'
   )
   commentEnd = close
   commentEndHtml = close + lastChar
@@ -153,7 +157,7 @@ exports.parseComment = function(text) {
     tokens.push({
       tag: true,
       value: value.trim(),
-      html: htmlRE.test(match[0]),
+      html: commentStartHtmlRE.test(match[0]),
       oneTime: oneTime
     })
     lastIndex = index + match[0].length

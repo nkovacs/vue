@@ -2416,7 +2416,7 @@ return /******/ (function(modules) { // webpackBootstrap
 	var config = __webpack_require__(16)
 	var dirParser = __webpack_require__(20)
 	var regexEscapeRE = /[-.*+?^${}()|[\]\/\\]/g
-	var cache, tagRE, htmlRE, commentStartRE, commentEnd, commentEndHtml, firstChar, lastChar
+	var cache, tagRE, htmlRE, commentStartRE, commentStartHtmlRE, commentEnd, commentEndHtml, firstChar, lastChar
 
 	/**
 	 * Escape a string so it can be used in a RegExp
@@ -2460,6 +2460,10 @@ return /******/ (function(modules) { // webpackBootstrap
 	    firstCharRE + '?' + openRE +
 	    '(.+)',
 	    'g'
+	  )
+	  commentStartHtmlRE = new RegExp(
+	    '^' + firstCharRE + openRE +
+	    '.*'
 	  )
 	  commentEnd = close
 	  commentEndHtml = close + lastChar
@@ -2567,7 +2571,7 @@ return /******/ (function(modules) { // webpackBootstrap
 	    tokens.push({
 	      tag: true,
 	      value: value.trim(),
-	      html: htmlRE.test(match[0]),
+	      html: commentStartHtmlRE.test(match[0]),
 	      oneTime: oneTime
 	    })
 	    lastIndex = index + match[0].length
@@ -7981,6 +7985,8 @@ return /******/ (function(modules) { // webpackBootstrap
 	  } else if (type === 3 && config.interpolate && node.data.trim()) {
 	    return compileTextNode(node, options)
 	  } else if (type === 8 && list) {
+	    // comment nodes can only be compiled if they're in a node list
+	    // because we need at least the opening comment, the content and the closing comment
 	    return compileCommentNode(node, options)
 	  } else {
 	    return null
@@ -8096,17 +8102,6 @@ return /******/ (function(modules) { // webpackBootstrap
 	  frag.appendChild(el)
 
 	  return makeTextNodeLinkFn(tokens, frag, options)
-
-	  /*var frag = document.createDocumentFragment()
-	  var el, token
-	  for (var i = 0, l = tokens.length; i < l; i++) {
-	    token = tokens[i]
-	    el = token.tag
-	      ? processTextToken(token, options)
-	      : document.createTextNode(token.value)
-	    frag.appendChild(el)
-	  }
-	  return makeTextNodeLinkFn(tokens, frag, options)*/
 	}
 
 	/**
