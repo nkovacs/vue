@@ -38,5 +38,26 @@ if (_.inBrowser) {
       })
     })
 
+    it('with v-repeat pre-rendered', function (done) {
+      var vm = new Vue({
+        el: el,
+        data: { items: [1,2,3,4,5] },
+        template: '<div v-repeat-idx="0" v-el="test"><!--{{$value-->1<!--}}--></div>' +
+          '<div v-repeat-idx="1" v-el="test"><!--{{$value-->2<!--}}--></div>' +
+          '<div v-repeat-idx="2" v-el="test"><!--{{$value-->3<!--}}--></div>' +
+          '<div v-repeat-idx="3" v-el="test"><!--{{$value-->4<!--}}--></div>' +
+          '<div v-repeat-idx="4" v-repeat="items" v-el="test"><!--{{$value-->5<!--}}--></div>'
+      })
+      expect(vm.$$.test).toBeTruthy()
+      expect(Array.isArray(vm.$$.test)).toBe(true)
+      expect(vm.$$.test[0].textContent).toBe('1')
+      expect(vm.$$.test[4].textContent).toBe('5')
+      vm.items = []
+      _.nextTick(function () {
+        expect(vm.$$.test.length).toBe(0)
+        done()
+      })
+    })
+
   })
 }

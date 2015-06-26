@@ -21,6 +21,18 @@ if (_.inBrowser) {
       assertMutations(vm, el, done)
     })
 
+    it('objects pre-rendered', function (done) {
+      var vm = new Vue({
+        el: el,
+        data: {
+          items: [{a:1}, {a:2}]
+        },
+        template: '<div v-repeat-idx="0"><!--{{$index-->0<!--}}--> <!--{{a-->1<!--}}--></div>' +
+          '<div v-repeat-idx="1" v-repeat="items"><!--{{$index-->1<!--}}--> <!--{{a-->2<!--}}--></div>'
+      })
+      assertMutations(vm, el, done)
+    })
+
     it('primitive values', function (done) {
       var vm = new Vue({
         el: el,
